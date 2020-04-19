@@ -1,49 +1,48 @@
-
-import 'dart:convert';
-
-import 'package:contact/api/auth_api.dart';
+import 'package:contact/api/contact_service.dart';
 import 'package:contact/contact_detail.dart';
-import 'package:flutter/services.dart';
-
+import 'package:contact/model/contact_model.dart';
 import 'package:contacts_service/contacts_service.dart';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-
 import 'package:permission_handler_platform_interface/permission_handler_platform_interface.dart';
+
 class ContactListPage extends StatefulWidget {
   @override
   _ContactListPageState createState() => _ContactListPageState();
 }
 
 class _ContactListPageState extends State<ContactListPage> {
-  List<Contact> _contacts;
- 
-  Contact contact;
+  // List<Contact> _contacts;
 
+  ContactModel _contactModel;
 
+  // Contact contact;
 
   @override
   initState() {
     super.initState();
-    contact = Contact();
+    // contact = Contact();
     refreshContacts();
-    getContact();
-    
+    // getContact();
   }
 
+  Future<ContactModel> _uploadAllContacts() async {
+    // converts the contact model to Map<String, dynamic> type
+   return await ContactService.uploadUserContacts(
+        contactsMap: _contactModel.toJson());
+  }
 
-  refreshContacts() async {
+  void refreshContacts() async {
     PermissionStatus permissionStatus = await _getContactPermission();
     if (permissionStatus == PermissionStatus.granted) {
       // Load without thumbnails initially.
-      var contacts = (await ContactsService.getContacts(withThumbnails: false))
-          .toList();
-//      var contacts = (await ContactsService.getContactsForPhone("8554964652"))
-//          .toList();
+      List<Contact> contacts =
+          (await ContactsService.getContacts(withThumbnails: false)).toList();
+      //      var contacts = (await ContactsService.getContactsForPhone("8554964652"))
+      //          .toList();
       setState(() {
-        _contacts = contacts;
-        
+        _contactModel = ContactModel(contacts: contacts);
       });
 
       // Lazy load thumbnails after rendering initial contacts.
@@ -53,23 +52,30 @@ class _ContactListPageState extends State<ContactListPage> {
           setState(() => contact.avatar = avatar);
         });
       }
+
+      // upload all gotten device-contacts to server
+      await _uploadAllContacts();
     } else {
       _handleInvalidPermissions(permissionStatus);
     }
   }
 
-  updateContact() async {
-    Contact ninja = _contacts.toList().firstWhere((contact) => contact.familyName.startsWith("Ninja"));
+  Future<void> updateContact() async {
+    Contact ninja = _contactModel.contacts
+        .toList()
+        .firstWhere((contact) => contact.familyName.startsWith("Ninja"));
     ninja.avatar = null;
     await ContactsService.updateContact(ninja);
 
     refreshContacts();
   }
-  
+
   Future<PermissionStatus> _getContactPermission() async {
     PermissionStatus permission = await Permission.contacts.status;
-    if (permission != PermissionStatus.granted && permission != PermissionStatus.restricted) {
-      Map<Permission, PermissionStatus> permissionStatus = await [Permission.contacts].request();
+    if (permission != PermissionStatus.granted &&
+        permission != PermissionStatus.restricted) {
+      Map<Permission, PermissionStatus> permissionStatus =
+          await [Permission.contacts].request();
       return permissionStatus[Permission.contacts] ?? Permission.unknown;
     } else {
       return permission;
@@ -90,15 +96,17 @@ class _ContactListPageState extends State<ContactListPage> {
     }
   }
 
- void getContact(){
-//print('this is the contact ${contact.displayName.toString()}');
-    Services.addNewUser(contact.displayName.toString(),contact.prefix.toString(),contact.suffix.toString(),contact.jobTitle.toString()).then((result) {
-      print('this is the length of the ${result.length}');
-
-      
-    });
-
- }
+  // void getContact() {
+  //   //print('this is the contact ${contact.displayName.toString()}');
+  //   Services.addNewUser(
+  //           contact.displayName.toString(),
+  //           contact.prefix.toString(),
+  //           contact.suffix.toString(),
+  //           contact.jobTitle.toString())
+  //       .then((result) {
+  //     print('this is the length of the ${result.length}');
+  //   });
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -113,33 +121,31 @@ class _ContactListPageState extends State<ContactListPage> {
         },
       ),
       body: SafeArea(
-        child: _contacts != null
+        child: _contactModel.contacts != null
             ? ListView.builder(
-          itemCount: _contacts?.length ?? 0,
-          itemBuilder: (BuildContext context, int index) {
-            Contact c = _contacts?.elementAt(index);
-            return ListTile(
-              onTap: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (BuildContext context) =>
-                        ContactDetailsPage(c)));
-              },
-              leading: (c.avatar != null && c.avatar.length > 0)
-                  ? CircleAvatar(backgroundImage: MemoryImage(c.avatar))
-                  : CircleAvatar(child: Text(c.initials())),
-              title: Text(c.displayName ?? ""),
-
-            );
-          },
-        )
-            : Center(child: CircularProgressIndicator(),),
+                itemCount: _contactModel.contacts?.length ?? 0,
+                itemBuilder: (BuildContext context, int index) {
+                  Contact c = _contactModel.contacts?.elementAt(index);
+                  return ListTile(
+                    onTap: () {
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (BuildContext context) =>
+                              ContactDetailsPage(c)));
+                    },
+                    leading: (c.avatar != null && c.avatar.length > 0)
+                        ? CircleAvatar(backgroundImage: MemoryImage(c.avatar))
+                        : CircleAvatar(child: Text(c.initials())),
+                    title: Text(c.displayName ?? ""),
+                  );
+                },
+              )
+            : Center(
+                child: CircularProgressIndicator(),
+              ),
       ),
     );
   }
 }
-
-
-
 
 class ItemsTile extends StatelessWidget {
   ItemsTile(this._title, this._items);
@@ -153,16 +159,19 @@ class ItemsTile extends StatelessWidget {
       children: <Widget>[
         ListTile(title: Text(_title)),
         Column(
-          children: _items.map((i) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: ListTile(
-              title: Text(i.label ?? ""),
-              trailing: Text(i.value ?? ""),
-            ),),
-          ).toList(),
+          children: _items
+              .map(
+                (i) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: ListTile(
+                    title: Text(i.label ?? ""),
+                    trailing: Text(i.value ?? ""),
+                  ),
+                ),
+              )
+              .toList(),
         ),
       ],
     );
   }
 }
-
